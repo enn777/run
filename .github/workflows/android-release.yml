@@ -46,7 +46,7 @@ jobs:
 
       - name: Build signed APK
         shell: pwsh
-        run: .\android\build.ps1 -SdkPath "$env:LOCALAPPDATA\Android\Sdk" -Abi arm64-v8a -Profile release
+        run: .\android\build.ps1 -SdkPath "$env:ANDROID_HOME" -Abi arm64-v8a -Profile release
 
       - name: Prepare release asset
         shell: pwsh
