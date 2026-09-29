@@ -23,12 +23,12 @@ jobs:
           distribution: microsoft
           java-version: '21'
 
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+
       - name: Install Android SDK components
         shell: pwsh
-        run: |
-          $sdk = "$env:LOCALAPPDATA\Android\Sdk"
-          & "$sdk\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="$sdk" `
-            'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' 'ndk;29.0.14206865'
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;29.0.14206865"
 
       - name: Restore signing key
         shell: pwsh
