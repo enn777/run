@@ -20,6 +20,7 @@ pub fn dispatch(args: Vec<String>) -> i32 {
         "record-info" => cmd_record_info(&rest),
         "obs-get" => cmd_obs_get(&rest),
         "obs-sample" => cmd_obs_sample(&rest),
+        "route-convert" => cmd_route_convert(&rest),
         "ai-records" => cmd_ai_records(&rest),
         "ai-info" => cmd_ai_info(&rest),
         "semester" => cmd_semester(),
@@ -409,7 +410,15 @@ fn cmd_obs_sample(rest: &[&str]) -> i32 {
     };
     let pts_bd = crate::api::points::points_bd(&pts);
     let start_ms = crate::crypto::envelope::now_ms() - dur * 1000;
-    let track = crate::track::generator::build(dist, dur, seed, (anchor.latitude, anchor.longitude), start_ms, &pts_bd);
+    let mut fixed_log = Vec::new();
+    let fixed_ring = crate::track::fixed::ring_for_run(&pts_bd, &mut fixed_log);
+    for line in &fixed_log {
+        eprintln!("{line}");
+    }
+    let track = match fixed_ring {
+        Some(ring) => crate::track::generator::build_on_ring(dist, dur, seed, start_ms, &pts_bd, ring),
+        None => crate::track::generator::build(dist, dur, seed, (anchor.latitude, anchor.longitude), start_ms, &pts_bd),
+    };
     let sess = client.login.clone().unwrap_or_default();
     let uuid = uuid::Uuid::new_v4().to_string().to_uppercase();
     let obj = crate::track::wire::build_obs_object(&track, rrid, &uuid, sess.uid, &pts);
@@ -420,6 +429,30 @@ fn cmd_obs_sample(rest: &[&str]) -> i32 {
         .ok();
     println!("已保存 {out}");
     0
+}
+
+/// 外部真实轨迹 → 内嵌固定轨迹 JSON（assets/fixed_route.json），供下次构建启用。
+fn cmd_route_convert(rest: &[&str]) -> i32 {
+    let flags = parse_flags(rest);
+    let Some(input) = get(&flags, "in") else {
+        eprintln!("缺少 --in <轨迹文件>（GPX/KML/TCX/JSON）");
+        return 1;
+    };
+    let out = get(&flags, "out").unwrap_or("assets/fixed_route.json");
+    let coord = get(&flags, "coord").unwrap_or("wgs84").to_ascii_lowercase();
+    let name = get(&flags, "name").unwrap_or("固定轨迹");
+    match crate::track::fixed::convert_route_file(input, &coord, name, out) {
+        Ok(lines) => {
+            for line in lines {
+                println!("{line}");
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            1
+        }
+    }
 }
 
 /// 单条跑步记录原始详情。

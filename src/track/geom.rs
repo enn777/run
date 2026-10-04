@@ -94,13 +94,19 @@ pub fn make_point_ring(bd_points: &[(f64, f64)]) -> PointRing {
             dense.push((x, y));
         }
     }
+    let arcs = build_arcs(&dense);
+    (dense, arcs, (cx, cy))
+}
+
+/// 闭合环弧长表：arcs[0]=0，末段为最后点 → 首点的闭合弦。
+pub fn build_arcs(dense: &[(f64, f64)]) -> Vec<f64> {
     let mut arcs = vec![0.0f64];
     for i in 1..=dense.len() {
         let a = dense[i - 1];
         let b = dense[i % dense.len()];
         arcs.push(arcs[i - 1] + ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt());
     }
-    (dense, arcs, (cx, cy))
+    arcs
 }
 
 /// 环线弧长 → 坐标（线性插值）。

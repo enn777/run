@@ -6,7 +6,7 @@
 //! 哨兵点（首 type∈{0,7}、索引1 type=5、末 type=6）；结尾断崖；点位吸附。
 #![allow(non_snake_case)]
 
-use super::geom::{fmt_gain_time, make_point_ring, ring_point_at, round_to, to_bd, Rng, MET_PER_DEG_LAT, MET_PER_DEG_LNG};
+use super::geom::{fmt_gain_time, make_point_ring, ring_point_at, round_to, to_bd, PointRing, Rng, MET_PER_DEG_LAT, MET_PER_DEG_LNG};
 use super::model::{GenPoint, Segment, TenWindow, Track};
 use super::postfix::apply_post_fixes;
 
@@ -32,7 +32,7 @@ fn fit_speeds(w: &mut [f64], dts: &[f64], target: f64) {
     }
 }
 
-/// 轨迹生成主入口。points_bd 为 BD 系打卡点。
+/// 轨迹生成主入口。points_bd 为 BD 系打卡点（拟合环 + 吸附）。
 pub fn build(
     dist: f64,
     dur: i64,
@@ -41,9 +41,23 @@ pub fn build(
     start_ms: i64,
     points_bd: &[(f64, f64)],
 ) -> Track {
+    let ring = make_point_ring(points_bd);
+    build_on_ring(dist, dur, seed, start_ms, points_bd, ring)
+}
+
+/// 在给定环上生成轨迹（固定真实轨迹用环，随机生成用打卡点拟合环）。
+/// points_bd 仅用于打卡点吸附。
+pub fn build_on_ring(
+    dist: f64,
+    dur: i64,
+    seed: u64,
+    start_ms: i64,
+    points_bd: &[(f64, f64)],
+    ring: PointRing,
+) -> Track {
     let mut rng = Rng::new(seed);
     let dur_f = dur as f64;
-    let (dense, arcs, pc) = make_point_ring(points_bd);
+    let (dense, arcs, pc) = ring;
     let (c_lat, c_lng) = pc;
     let direction: f64 = rng.choice(&[1.0, -1.0]);
     let s0 = rng.uniform(0.0, *arcs.last().unwrap_or(&400.0));

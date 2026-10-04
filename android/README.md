@@ -13,6 +13,7 @@ Android 移植保留 Rust 业务逻辑、桌面 GUI/CLI 与七个功能页面。
 - 登录、跑步与 AI 任务执行时保持屏幕常亮；任务结束或切到后台后解除。使用期间请让 App 保持前台，后台或锁屏运行不作保证。
 - 数据保存在 Android 应用私有 `files` 目录；卸载/清除应用数据会删除它们。APK 不带电脑端的账号、会话和配置。
 - 自更新：默认启动静默检查（可在关于页改为询问/关闭），发现新版本下载 APK 后调起系统安装器；首次安装需在系统设置允许本应用"安装未知应用"。检查上游与 fork 两个仓库，取带 APK 资产且版本最新的 Release。
+- 固定轨迹：`assets/fixed_route.json` 启用后（`enabled: true` 且 points ≥ 8），跑步轨迹不再由打卡点随机拟合，而是沿内嵌的一条真实路线行进（刚体贴合到当次打卡点，必要时局部绕行弯）；起点位置与行进方向仍随机，步频/配速/采样等其余逻辑不变。文件未启用时回退原打卡点拟合环。
 
 ## 发布（自更新下载源）
 
@@ -24,6 +25,17 @@ Android 移植保留 Rust 业务逻辑、桌面 GUI/CLI 与七个功能页面。
 ```
 
 脚本会读 Cargo.toml 版本、盖章 AndroidManifest（versionName=`<版本>-android.<N>`）、构建 arm64 并以固定资产名 `NekoSportsWorldTool-android-arm64.apk` 上传。**必须一直用同一个签名密钥**（`android/.signing/local-test.keystore`）：签名变化后手机无法覆盖安装，卸载重装还会丢 identity/session。
+
+## 固定轨迹导入
+
+把真实跑步记录（GPX/KML/TCX/JSON）转换为内嵌固定轨迹：
+
+```powershell
+cargo run -- route-convert --in <轨迹文件> --name "校区环线" [--coord wgs84|gcj02|bd09]
+# 默认写出 assets/fixed_route.json 并启用；GPX/KML/TCX 默认 WGS-84
+```
+
+脚本会去重、三点平滑、按 3m 等距重采样，并提示路径长度、闭环/往返与 GPS 漂移警告。转换后重新构建 APK 即生效。轨迹只取形状：运行时刚体贴合（旋转+等比缩放+平移）到当次任务打卡点，离打卡点过远处自动插入平滑绕行弯。
 
 ## Windows 构建
 

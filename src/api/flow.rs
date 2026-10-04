@@ -76,7 +76,7 @@ pub fn run_full_flow(
         ));
     }
 
-    // ③ 轨迹生成（打卡点拟合环）
+    // ③ 轨迹生成（内嵌固定轨迹优先，否则打卡点拟合环）
     let pts_bd = points::points_bd(&pts);
     // 平均配速须落在有效窗口内（否则逐点速度无法全窗内），越界时修正时长
     let mut params = *params;
@@ -95,15 +95,27 @@ pub fn run_full_flow(
         ));
         params.dur = fixed_dur;
     }
+    let mut fixed_log = Vec::new();
+    let fixed_ring = crate::track::fixed::ring_for_run(&pts_bd, &mut fixed_log);
+    for line in &fixed_log {
+        log(line);
+    }
     log(&format!(
-        "[track] 生成轨迹 {:.0}m / {}s（{} 点位拟合环）…",
+        "[track] 生成轨迹 {:.0}m / {}s（{}）…",
         params.dist,
         params.dur,
-        pts_bd.len()
+        if fixed_ring.is_some() {
+            "内嵌固定轨迹".to_string()
+        } else {
+            format!("{} 点位拟合环", pts_bd.len())
+        }
     ));
     // 随机 0-4 秒偏移（终端上报的 flag 与首点差 <5s），轨迹/提交/OBS/五点统一使用
     let start_ms = params.start_ms + (rand::random::<i64>() % 5) * 1000;
-    let mut track = gen_track(params.dist, params.dur, params.seed, (anchor.latitude, anchor.longitude), start_ms, &pts_bd);
+    let mut track = match fixed_ring {
+        Some(ring) => crate::track::generator::build_on_ring(params.dist, params.dur, params.seed, start_ms, &pts_bd, ring),
+        None => gen_track(params.dist, params.dur, params.seed, (anchor.latitude, anchor.longitude), start_ms, &pts_bd),
+    };
     if let Some(range) = params.manual_altitude_range {
         crate::track::altitude::override_bd_a_range(&mut track, range)?;
         log(&format!("√ [track] 已将海拔曲线映射到 {:.2}-{:.2}m，覆盖 {} 个点，爬升/圈数据将按覆盖值计算", range.min_m, range.max_m, track.locations.len()));
