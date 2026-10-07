@@ -80,6 +80,32 @@ mod tests {
         assert_eq!(track.locations[0].coorType, "gcj02");
         // 步数为正、步频在合理范围
         assert!(track.totalSteps > 500, "steps={}", track.totalSteps);
+        // 类型分布对齐真人记录（2026-09-28 样本）：type0 为主，无漂移/type1/7/8
+        let c0 = track.locations.iter().filter(|p| p.ptype == 0).count();
+        assert!(
+            c0 as f64 / n as f64 > 0.85,
+            "type0 占比不足: {}/{}",
+            c0,
+            n
+        );
+        assert!(
+            track.locations.iter().all(|p| !matches!(p.ptype, -1 | 1 | 7 | 8)),
+            "出现真人记录没有的点类型"
+        );
+        // 字段分布对齐真人记录：state/bdG 恒 1、radius 1.1-1.6、非哨兵点 speed 恒 >0
+        assert!(
+            track.locations.iter().all(|p| p.state == 1 && p.bdG == 1),
+            "state/bdG 未对齐真人记录"
+        );
+        assert!(
+            track.locations.iter().all(|p| (1.0..=1.7).contains(&p.radius)),
+            "radius 越界"
+        );
+        for (i, p) in track.locations.iter().enumerate() {
+            if p.ptype != 5 {
+                assert!(p.speed > 0.0, "idx {i} speed=0");
+            }
+        }
     }
 
     /// 打卡点吸附：轨迹必过点位（<40m 落位）。

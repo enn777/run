@@ -19,7 +19,7 @@ pub fn apply_post_fixes(locs: &mut [GenPoint], rng: &mut Rng, start_ms: i64) {
             locs[ci].validTime = stop_t;
             // 收尾减速仍须落在有效配速窗口内（2.0-2.6 m/s ≈ 7.2-9.4 km/h）
             let stop_ms = round_to(rng.uniform(2.0, 2.6), 4);
-            locs[ci].speed = round_to(stop_ms * 3.6, 4);
+            locs[ci].speed = round_to(stop_ms * 3.6 * rng.uniform(0.4, 0.7), 4);
             locs[ci].avgSpeed = stop_ms;
             locs[ci].bdS = round_to(rng.uniform(0.05, 0.15), 3);
             locs[ci].gainTime = fmt_gain_time(start_ms + stop_t * 1000);
@@ -33,10 +33,10 @@ pub fn apply_post_fixes(locs: &mut [GenPoint], rng: &mut Rng, start_ms: i64) {
         sp.ptype = 5;
         sp.state = 1;
         sp.locType = 1;
-        sp.radius = round_to(rng.uniform(2.0, 3.5), 2);
+        sp.radius = round_to(rng.uniform(1.1, 1.6), 2);
         sp.speed = 0.0;
         sp.avgSpeed = 0.0;
-        sp.bdS = 0.0;
+        sp.bdS = round_to(rng.uniform(0.05, 0.15), 3);
         sp.totalDis = 0.0;
         sp.validDis = 0.0;
         sp.totalTime = 0;
@@ -47,15 +47,8 @@ pub fn apply_post_fixes(locs: &mut [GenPoint], rng: &mut Rng, start_ms: i64) {
         let e = &mut locs[last];
         e.ptype = 6;
         e.locType = 1;
-        e.radius = round_to(rng.uniform(1.5, 3.0), 2);
-        // 后半段散布 type=1/2/8（67-99% 行程区间；type=8 真人低频出现）
-        let from = (locs.len() as f64 * 0.67) as usize;
-        for i in from..locs.len().saturating_sub(2) {
-            if rng.random() < 0.06 {
-                locs[i].ptype = rng.choice(&[1, 1, 2, 8]);
-                locs[i].locType = 1;
-            }
-        }
+        e.radius = round_to(rng.uniform(1.1, 1.6), 2);
+        // 真人记录（2026-09-28 样本）后半段无 type=1/2/8 散布点，不再注入
     }
     // 边界修正①：索引2 首个真实点 avgSpeed 不跨哨兵计算，并保持在有效窗口内
     if locs.len() > 3 {
@@ -64,14 +57,14 @@ pub fn apply_post_fixes(locs: &mut [GenPoint], rng: &mut Rng, start_ms: i64) {
             .clamp(crate::track::generator::SPEED_FLOOR, crate::track::generator::SPEED_CEIL);
         p2.speed = round_to(p2.avgSpeed * 3.6, 4);
     }
-    // 首点 = 起点：totalTime=0、type∈{0,7}、速度取首个非零值
+    // 首点 = 起点：totalTime=0、type=0（真人记录无 type=7）、速度取首个非零值
     if !locs.is_empty() {
         locs[0].totalTime = 0;
         locs[0].validTime = 0;
         locs[0].state = 1;
-        locs[0].ptype = rng.choice(&[0, 0, 0, 7]);
+        locs[0].ptype = 0;
         locs[0].locType = 1;
-        locs[0].radius = round_to(rng.uniform(1.5, 3.0), 2);
+        locs[0].radius = round_to(rng.uniform(1.1, 1.6), 2);
         for j in 1..locs.len() {
             if locs[j].avgSpeed > 0.0 {
                 locs[0].avgSpeed = locs[j].avgSpeed;

@@ -122,29 +122,18 @@ pub fn build_on_ring(
     let seg_dist: Vec<f64> = (0..n).map(|i| w[i] * dts[i]).collect();
     let speeds: Vec<f64> = w.clone();
 
-    let tl_w = [((-1i64, 4i64), 54u32), ((-1, 1), 27), ((-1, 12), 13), ((-1, 5), 3), ((-1, 6), 2)];
+    // 点类型分布对齐真人记录（2026-09-28 实测样本 142 点）：type0 91.5%、
+    // type2/type3 各 3.5%、无 type1/7/8/漂移点。旧分布（54% type0 + 39% type3 +
+    // 4% 漂移）会让学校 App 把大量点画成灰色，绿色有效轨迹断断续续。
     let mut kinds: Vec<(i64, i64)> = Vec::with_capacity(n);
     for _ in 0..n {
         let u = rng.random();
-        if u < 0.39 {
-            kinds.push((3, 1));
-        } else if u < 0.93 {
+        if u < 0.915 {
             kinds.push((0, 1));
-        } else if u < 0.96 {
-            kinds.push(rng.weighted(&tl_w));
+        } else if u < 0.955 {
+            kinds.push((2, 1));
         } else {
-            kinds.push((rng.choice(&[1, 1, 1, 1, 2, 2]), 1));
-        }
-    }
-    for i in 1..kinds.len() {
-        let prev_drift = (-1 == kinds[i - 1].0) || kinds[i - 1].0 == 5 || kinds[i - 1].0 == 6;
-        if kinds[i].0 != -1 && prev_drift && rng.random() < 0.08 {
-            kinds[i] = (if rng.random() < 0.75 { 7 } else { 8 }, 1);
-        }
-    }
-    for i in 1..n {
-        if kinds[i].0 == -1 && kinds[i - 1].0 == -1 {
-            kinds[i] = (rng.choice(&[3, 0]), 1);
+            kinds.push((3, 1));
         }
     }
     let normal_idx: Vec<usize> =
@@ -194,15 +183,8 @@ pub fn build_on_ring(
             jy = 0.72 * jy + rng.gauss(0.0, 0.75);
             px = bx + jx;
             py = by + jy;
-            rad = round_to(
-                if typ == 3 { rng.uniform(1.4, 5.1) } else { rng.uniform(1.4, 2.4) },
-                2,
-            );
-            state = if typ == 0 {
-                rng.weighted(&[(1, 145), (2, 45), (3, 164)])
-            } else {
-                rng.weighted(&[(1, 145), (2, 256), (3, 151)])
-            };
+            rad = round_to(rng.uniform(1.1, 1.6), 2);
+            state = 1;
         } else {
             match lt {
                 4 => {
@@ -276,12 +258,8 @@ pub fn build_on_ring(
         } else {
             let avg = round_to(d_step / dt, 4);
             let kmh = avg * 3.6;
-            let sigma = (kmh * 0.08).max(0.05);
-            let gps = if rng.random() < 0.20 {
-                0.0
-            } else {
-                round_to((kmh + rng.gauss(0.0, sigma)).max(0.0), 4)
-            };
+            // GPS 瞬时速度约为实际配速的 0.4-0.7 倍且恒不为 0（真人记录实测中位比值 0.55、无 0 值）
+            let gps = round_to((kmh * rng.uniform(0.40, 0.70) + rng.gauss(0.0, 0.30)).max(1.0), 4);
             (avg, gps)
         };
 
@@ -324,8 +302,8 @@ pub fn build_on_ring(
             bdA: round_to(alt, 2),
             bdD: round_to(brg, 2),
             bdS: round_to((avg_sp * rng.uniform(0.6, 0.95)).max(0.0), 3),
-            bdG: rng.choice(&[1, 1, 1, -1]),
-            count: rng.randint(20, 88),
+            bdG: 1,
+            count: rng.randint(60, 80),
             dtr: 0.0,
             state,
             locationId: String::new(),
