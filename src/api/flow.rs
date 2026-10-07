@@ -78,6 +78,17 @@ pub fn run_full_flow(
 
     // ③ 轨迹生成（内嵌固定轨迹优先，否则打卡点拟合环）
     let pts_bd = points::points_bd(&pts);
+    // 围栏（真实 App 每次任务上报当前围栏；接口失败回退内置围栏）
+    let geo_fences = match crate::api::fence::fetch_geo_fences_raw(client, log) {
+        Ok(v) if v.as_array().map(|a| !a.is_empty()).unwrap_or(false) => {
+            log("√ [fence] 围栏已实时拉取");
+            v.to_string()
+        }
+        _ => {
+            log("⚠ [fence] 围栏接口不可用，使用内置围栏");
+            crate::track::wire::embedded_geo_fences().to_string()
+        }
+    };
     // 平均配速须落在有效窗口内（否则逐点速度无法全窗内），越界时修正时长
     let mut params = *params;
     let avg = params.dist / params.dur as f64;
@@ -133,7 +144,7 @@ pub fn run_full_flow(
     ));
 
     // ④ 五点 wrapper（跑完态）
-    let five = five_point_wrapper(&pts, track.startTime);
+    let five = five_point_wrapper(&pts, track.startTime, &geo_fences);
     let _ = &five;
 
     // ⑤ 提交（sportType=1）
@@ -158,7 +169,7 @@ pub fn run_full_flow(
     // 从提交结果回填 track.startTime（含随机秒偏移），保证 body/OBS/flag 全链一致
     let mut track_for_obs = sp.track.clone();
     track_for_obs.startTime = result.start_ms;
-    let obj = build_obs_object(&track_for_obs, result.rrid, &result.uuid, sess.uid, &pts);
+    let obj = build_obs_object(&track_for_obs, result.rrid, &result.uuid, sess.uid, &pts, &geo_fences);
     let payload = obj.to_string().into_bytes();
     let keys = obs_keys(&track_for_obs, result.rrid, &result.uuid);
     let obs_ok = super::obs::upload_both_keys(client, &keys, &payload, log);

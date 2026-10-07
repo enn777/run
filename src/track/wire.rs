@@ -16,8 +16,13 @@ use super::model::{GenPoint, Track};
 const X_PI: f64 = std::f64::consts::PI * 3000.0 / 180.0;
 
 /// 学校跑步区域围栏(取自 2026-09-28 真人记录;每次任务的围栏由服务器配置,
-/// App 无法实时获取,内置最近一次真人使用的围栏,仅影响详情页地图显示)。
+/// 围栏接口不可用时回退到这份内置围栏,仅影响详情页地图显示)。
 const GEO_FENCES_JSON: &str = include_str!("../../assets/geo_fences.json");
+
+/// 内置围栏(回退用)。
+pub fn embedded_geo_fences() -> &'static str {
+    GEO_FENCES_JSON
+}
 
 /// 百度 BD-09 → 高德 GCJ-02。
 pub fn bd09_to_gcj02(bd_lat: f64, bd_lng: f64) -> (f64, f64) {
@@ -102,14 +107,15 @@ pub fn five_point_payload(points: &[Value], start_ms: i64) -> Vec<Value> {
         .collect()
 }
 
-/// 提交 body 的 fivePointJson 包装串。
-pub fn five_point_wrapper(points: &[Value], start_ms: i64) -> String {
+/// 提交 body 的 fivePointJson 包装串。geo_fences_json 为本次任务的围栏 JSON
+/// (围栏接口实时拉取;失败时传内置围栏)。
+pub fn five_point_wrapper(points: &[Value], start_ms: i64, geo_fences_json: &str) -> String {
     let five = five_point_payload(points, start_ms);
     json!({
         "useZip": false,
         "fivePointJson": Value::Array(five).to_string(),
         "runAreaId": -1,
-        "geoFencesJson": GEO_FENCES_JSON,
+        "geoFencesJson": geo_fences_json,
         "freedomShowFence": false,
     })
     .to_string()
@@ -287,14 +293,15 @@ fn build_laps(track: &Track, start_ms: i64) -> Vec<Value> {
     laps
 }
 
-/// 组装 10 键 OBS 对象（值均 gzip+base64；segment_json 为约 30s 分段、
-/// extension_json 为空串 gzip,与真人样本键集一致）。
+/// 组装 OBS 对象(值均 gzip+base64;segment_json 为约 30s 分段、
+/// extension_json 为空串 gzip,与真人样本键集一致;geo_fences_json 为本次任务围栏)。
 pub fn build_obs_object(
     track: &Track,
     rrid: i64,
     uuid: &str,
     uid: i64,
     live_points: &[Value],
+    geo_fences_json: &str,
 ) -> Value {
     let start_ms = track.startTime;
     let pts: Vec<Value> = track.locations.iter().map(|p| conv_point(p, start_ms)).collect();
@@ -305,7 +312,7 @@ pub fn build_obs_object(
     let fx = json!({
         "fivePointJson": Value::Array(five).to_string(),
         "freedomShowFence": false,
-        "geoFencesJson": GEO_FENCES_JSON,
+        "geoFencesJson": geo_fences_json,
         "runAreaId": -1,
         "useZip": false,
     });

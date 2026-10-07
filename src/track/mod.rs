@@ -183,7 +183,7 @@ mod tests {
             })
             .collect();
         let track = build(3300.0, 1220, 42, (38.9, 121.54), 1_788_958_186_123, &sample_points());
-        let obj = build_obs_object(&track, 1320403809, "UUID-TEST", 13056447, &pts);
+        let obj = build_obs_object(&track, 1320403809, "UUID-TEST", 13056447, &pts, super::wire::embedded_geo_fences());
         let keys: Vec<&str> = obj.as_object().unwrap().keys().map(|s| s.as_str()).collect();
         assert_eq!(
             keys,

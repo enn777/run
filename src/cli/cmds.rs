@@ -422,7 +422,11 @@ fn cmd_obs_sample(rest: &[&str]) -> i32 {
     };
     let sess = client.login.clone().unwrap_or_default();
     let uuid = uuid::Uuid::new_v4().to_string().to_uppercase();
-    let obj = crate::track::wire::build_obs_object(&track, rrid, &uuid, sess.uid, &pts);
+    let geo_fences = match crate::api::fence::fetch_geo_fences_raw(&mut client, &mut log) {
+        Ok(v) if v.as_array().map(|a| !a.is_empty()).unwrap_or(false) => v.to_string(),
+        _ => crate::track::wire::embedded_geo_fences().to_string(),
+    };
+    let obj = crate::track::wire::build_obs_object(&track, rrid, &uuid, sess.uid, &pts, &geo_fences);
     let out = get(&flags, "out").unwrap_or("obs_ours.json");
     let decoded = decode_gz_fields(&obj);
     std::fs::write(out, serde_json::to_string_pretty(&decoded).unwrap_or_default())
