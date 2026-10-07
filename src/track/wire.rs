@@ -15,6 +15,10 @@ use super::model::{GenPoint, Track};
 
 const X_PI: f64 = std::f64::consts::PI * 3000.0 / 180.0;
 
+/// 学校跑步区域围栏(取自 2026-09-28 真人记录;每次任务的围栏由服务器配置,
+/// App 无法实时获取,内置最近一次真人使用的围栏,仅影响详情页地图显示)。
+const GEO_FENCES_JSON: &str = include_str!("../../assets/geo_fences.json");
+
 /// 百度 BD-09 → 高德 GCJ-02。
 pub fn bd09_to_gcj02(bd_lat: f64, bd_lng: f64) -> (f64, f64) {
     let x = bd_lng - 0.0065;
@@ -74,7 +78,8 @@ pub fn conv_point(p: &GenPoint, start_ms: i64) -> Value {
     })
 }
 
-/// 五点实体（实时点位 → 跑完态 isPass=true）。
+/// 五点实体(实时点位 → 跑完态 isPass=true;position 为服务器下发的通过顺序号,
+/// 真人记录为 0-4 顺序值——999 会导致校园 App 详情页不显示打卡点)。
 pub fn five_point_payload(points: &[Value], start_ms: i64) -> Vec<Value> {
     points
         .iter()
@@ -90,7 +95,7 @@ pub fn five_point_payload(points: &[Value], start_ms: i64) -> Vec<Value> {
                 "lat": p["lat"].as_f64().unwrap_or(0.0),
                 "lon": p["lon"].as_f64().unwrap_or(0.0),
                 "pointName": p["pointName"].as_str().unwrap_or(""),
-                "position": 999,
+                "position": i as i64,
                 "state": 0,
             })
         })
@@ -104,7 +109,7 @@ pub fn five_point_wrapper(points: &[Value], start_ms: i64) -> String {
         "useZip": false,
         "fivePointJson": Value::Array(five).to_string(),
         "runAreaId": -1,
-        "geoFencesJson": "[]",
+        "geoFencesJson": GEO_FENCES_JSON,
         "freedomShowFence": false,
     })
     .to_string()
@@ -192,6 +197,52 @@ fn build_windows(track: &Track, rrid: i64) -> (Vec<Value>, Vec<Value>) {
 }
 
 /// 圈（每 1000m 一圈，末圈 isFullLap=false；avgStride 单位厘米）。
+/// 分段（约 30s 一段；键集与真人样本一致，avgSpeed 为配速"分/公里"小数值——
+/// 真人样本逐段验证：103.77m/35s ↔ 5.139 ≈ 5'08"/km）。
+fn build_segments(track: &Track, start_ms: i64) -> Vec<Value> {
+    let mut out = Vec::new();
+    let locs = &track.locations;
+    if locs.is_empty() {
+        return out;
+    }
+    let mut seg_start_t = 0i64;
+    let mut prev_d = 0.0f64;
+    let mut prev_steps = 0i64;
+    let mut id = 1i64;
+    for (i, p) in locs.iter().enumerate() {
+        let last = i == locs.len() - 1;
+        let dur = p.totalTime - seg_start_t;
+        if dur < 30 && !last {
+            continue;
+        }
+        let dist = (p.totalDis - prev_d).max(0.0);
+        let steps = (p.steps - prev_steps).max(0);
+        let pace = if dist > 0.5 {
+            (p.totalTime - seg_start_t).max(1) as f64 / 60.0 / (dist / 1000.0)
+        } else {
+            0.0
+        };
+        out.push(json!({
+            "avgSpeed": pace,
+            "avgStep": steps,
+            "distance": dist,
+            "endTime": start_ms + p.totalTime * 1000,
+            "flag": start_ms,
+            "id": id,
+            "intervalStepModel": 0,
+            "originAvgStep": steps,
+            "speedStandard": 900,
+            "startTime": start_ms + seg_start_t * 1000,
+            "state": 0,
+        }));
+        id += 1;
+        seg_start_t = p.totalTime;
+        prev_d = p.totalDis;
+        prev_steps = p.steps;
+    }
+    out
+}
+
 fn build_laps(track: &Track, start_ms: i64) -> Vec<Value> {
     let mut laps = Vec::new();
     let locs = &track.locations;
@@ -236,7 +287,8 @@ fn build_laps(track: &Track, start_ms: i64) -> Vec<Value> {
     laps
 }
 
-/// 组装 10 键 OBS 对象（值均 gzip+base64；segment_json/runFaceCheck 为空串 gzip）。
+/// 组装 10 键 OBS 对象（值均 gzip+base64；segment_json 为约 30s 分段、
+/// extension_json 为空串 gzip,与真人样本键集一致）。
 pub fn build_obs_object(
     track: &Track,
     rrid: i64,
@@ -253,21 +305,23 @@ pub fn build_obs_object(
     let fx = json!({
         "fivePointJson": Value::Array(five).to_string(),
         "freedomShowFence": false,
-        "geoFencesJson": "[]",
+        "geoFencesJson": GEO_FENCES_JSON,
         "runAreaId": -1,
         "useZip": false,
     });
+    let segments = build_segments(track, start_ms);
     json!({
         "rrid": gz_str(&rrid.to_string()),
         "uuid": gz_str(uuid),
         "uid": gz_str(&uid.to_string()),
         "run_data": gz_json(&run_wrap),
         "fixed_point_json": gz_json(&fx),
-        "segment_json": gz_str(""),
+        "segment_json": gz_json(&Value::Array(segments)),
         "speed_json": gz_json(&Value::Array(sp)),
         "step_freq_json": gz_json(&Value::Array(stf)),
         "laps_json": gz_json(&Value::Array(laps)),
         "runFaceCheck": gz_str(""),
+        "extension_json": gz_str(""),
     })
 }
 

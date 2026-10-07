@@ -21,6 +21,7 @@ pub fn dispatch(args: Vec<String>) -> i32 {
         "obs-get" => cmd_obs_get(&rest),
         "obs-sample" => cmd_obs_sample(&rest),
         "route-convert" => cmd_route_convert(&rest),
+        "points-raw" => cmd_points_raw(&rest),
         "ai-records" => cmd_ai_records(&rest),
         "ai-info" => cmd_ai_info(&rest),
         "semester" => cmd_semester(),
@@ -446,6 +447,41 @@ fn cmd_route_convert(rest: &[&str]) -> i32 {
             for line in lines {
                 println!("{line}");
             }
+            0
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            1
+        }
+    }
+}
+
+/// 点位接口完整解密响应（调试对照：围栏/区域字段排查用）。
+fn cmd_points_raw(rest: &[&str]) -> i32 {
+    let flags = parse_flags(rest);
+    let mut client = match make_client() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{e}");
+            return 1;
+        }
+    };
+    let mut log = |s: &str| eprintln!("{s}");
+    let anchor = match client.identity.anchor_coordinate() {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("定位锚点无效: {e}");
+            return 1;
+        }
+    };
+    let area = get(&flags, "area").map(|s| s.to_string());
+    match crate::api::points::fetch_points_raw(&mut client, anchor, area, &mut log) {
+        Ok(biz) => {
+            let out = get(&flags, "out").unwrap_or("points_raw.json");
+            std::fs::write(out, serde_json::to_string_pretty(&biz).unwrap_or_default())
+                .map_err(|e| eprintln!("写入失败: {e}"))
+                .ok();
+            println!("已保存 {out}");
             0
         }
         Err(e) => {

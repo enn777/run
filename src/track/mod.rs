@@ -189,7 +189,7 @@ mod tests {
             keys,
             vec![
                 "rrid", "uuid", "uid", "run_data", "fixed_point_json", "segment_json",
-                "speed_json", "step_freq_json", "laps_json", "runFaceCheck"
+                "speed_json", "step_freq_json", "laps_json", "runFaceCheck", "extension_json"
             ]
         );
         // rrid gzip 可解
@@ -209,12 +209,32 @@ mod tests {
         let pts: Vec<serde_json::Value> =
             serde_json::from_str(wrap["allLocJson"].as_str().unwrap()).unwrap();
         assert_eq!(pts[0].as_object().unwrap().len(), 27, "点键数必须 27");
-        // segment_json 是空串 gzip
+        // fixed_point_json:position 为 0-4 顺序号、geoFencesJson 非空(真人样本格式)
+        let raw = crate::crypto::envelope::b64_decode(obj["fixed_point_json"].as_str().unwrap()).unwrap();
+        let mut dec = flate2::read::GzDecoder::new(&raw[..]);
+        let mut s = String::new();
+        dec.read_to_string(&mut s).unwrap();
+        let fx: serde_json::Value = serde_json::from_str(&s).unwrap();
+        let five: Vec<serde_json::Value> = serde_json::from_str(fx["fivePointJson"].as_str().unwrap()).unwrap();
+        assert_eq!(five.len(), 5);
+        assert_eq!(five[0]["position"], 0, "position 应为顺序号");
+        assert_eq!(five[4]["position"], 4);
+        assert!(!fx["geoFencesJson"].as_str().unwrap_or("").is_empty(), "geoFencesJson 不应为空");
+        // segment_json:约 30s 分段,键集与真人样本一致
         let raw = crate::crypto::envelope::b64_decode(obj["segment_json"].as_str().unwrap()).unwrap();
         let mut dec = flate2::read::GzDecoder::new(&raw[..]);
         let mut s = String::new();
         dec.read_to_string(&mut s).unwrap();
-        assert_eq!(s, "");
+        let segs: Vec<serde_json::Value> = serde_json::from_str(&s).unwrap();
+        assert!(!segs.is_empty(), "segment_json 不应为空");
+        let seg_keys: Vec<&str> = segs[0].as_object().unwrap().keys().map(|k| k.as_str()).collect();
+        assert_eq!(
+            seg_keys,
+            vec![
+                "avgSpeed", "avgStep", "distance", "endTime", "flag", "id",
+                "intervalStepModel", "originAvgStep", "speedStandard", "startTime", "state"
+            ]
+        );
         // obs keys 两个
         let ks = obs_keys(&track, 1320403809, "UUID-TEST");
         assert_eq!(ks.len(), 2);

@@ -26,6 +26,54 @@ pub fn fetch_points(
     fetch_points_ext(client, anchor, None, log)
 }
 
+/// 点位接口完整解密业务响应（调试对照用：含 pointsResModels 之外的围栏/区域字段）。
+/// 不读缓存，不回退。run_area_id 提供时附带 runAreaId（与 App 行为一致）。
+pub fn fetch_points_raw(
+    client: &mut ApiClient,
+    anchor: Coordinate,
+    run_area_id: Option<String>,
+    log: &mut dyn FnMut(&str),
+) -> Result<Value, String> {
+    anchor.validate()?;
+    let uid = client.login.as_ref().map(|s| s.uid).unwrap_or(0);
+    let unid = client
+        .login
+        .as_ref()
+        .map(|s| s.unid.clone())
+        .unwrap_or_else(|| "0".into());
+    let lat = anchor.latitude;
+    let lon = anchor.longitude;
+    let url = format!("{}{}", model::HOST, POINTS_PATH);
+
+    let start_ms = crate::crypto::envelope::now_ms();
+    let runec_input = format!("{uid}{}{}{}", six_digit(lon), six_digit(lat), (start_ms / 1000) * 1000);
+    let runec_env = build_envelope(&mut client.session, &runec_input, OuterOrder::Observed);
+
+    let mut body = json!({
+        "sportType": 4,
+        "longitude": lon,
+        "latitude": lat,
+        "sign": md5_url_sign(&url),
+        "uuid": uuid::Uuid::new_v4().to_string(),
+        "selectedUnid": unid,
+        "runec": runec_env.json,
+    });
+    if let Some(area) = run_area_id {
+        body["runAreaId"] = json!(area);
+    }
+    let body = body.to_string();
+
+    let out = client.envelope_request("POST", &url, &body, crate::crypto::header::UA_IOS, &[])?;
+    let Some(dec) = out.decrypted else {
+        return Err("点位接口响应未加密".into());
+    };
+    log(&format!(
+        "[points-raw] 顶层字段: {}",
+        dec.business.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>().join(",")).unwrap_or_default()
+    ));
+    Ok(dec.business)
+}
+
 /// run_area_id：学校配置了区域时 App 会附带；未配置则不传（与 App 一致）。
 pub fn fetch_points_ext(
     client: &mut ApiClient,
